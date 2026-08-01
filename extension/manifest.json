@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "VideoVault 一键收藏",
+  "version": "1.0.0",
+  "description": "将当前浏览页面快速收藏到 VideoVault 视频收藏夹",
+  "permissions": ["activeTab", "storage"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "128": "icon.png"
+    }
+  },
+  "icons": {
+    "128": "icon.png"
+  }
+}

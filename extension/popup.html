@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { width: 260px; font-family: system-ui, sans-serif; padding: 14px; margin: 0; }
+      h3 { margin: 0 0 10px; font-size: 15px; }
+      label { font-size: 12px; color: #666; }
+      input { width: 100%; padding: 6px; box-sizing: border-box; margin: 4px 0 10px; border: 1px solid #ccc; border-radius: 6px; }
+      button { width: 100%; padding: 9px; margin-top: 6px; border: 0; border-radius: 8px; cursor: pointer; font-size: 13px; }
+      #collect { background: #6c8cff; color: #fff; }
+      #open { background: #eee; color: #333; }
+      #status { margin-top: 8px; color: #888; font-size: 12px; min-height: 16px; }
+    </style>
+  </head>
+  <body>
+    <h3>⭐ VideoVault 收藏</h3>
+    <label>应用地址</label>
+    <input id="appurl" value="http://localhost:5173" />
+    <button id="collect">⭐ 收藏当前页面</button>
+    <button id="open">打开 VideoVault</button>
+    <div id="status"></div>
+    <script src="popup.js"></script>
+  </body>
+</html>
