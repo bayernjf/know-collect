@@ -13,6 +13,7 @@ import {
   loadAIConfigs,
   saveAIConfigs,
 } from './storage';
+import { useAuth } from './lib/auth';
 import {
   fetchVideos,
   insertVideo,
@@ -141,8 +142,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [notes, setNotes] = useState<Note[]>(() => loadNotes());
   const [reminders, setReminders] = useState<Reminder[]>(() => loadReminders());
 
+  const { user } = useAuth();
+  const userId = user?.id ?? null;
+
   useEffect(() => {
-    if (!isSupabaseConfigured) return;
+    // 登录态变化（含登录成功）时重新拉取云端数据；未登录不拉（RLS 下也读不到）。
+    if (!isSupabaseConfigured || !userId) return;
     const load = async () => {
       try {
         const [sv, sr, sa, sf, sn, srem] = await Promise.all([
@@ -164,7 +169,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       }
     };
     load();
-  }, []);
+  }, [userId]);
 
   // 浏览器通知：到期提醒
   const notifiedRef = useRef<Set<string>>(new Set());
