@@ -6,6 +6,12 @@ import {
   saveReports,
   loadReminders,
   saveReminders,
+  loadFolders,
+  saveFolders,
+  loadNotes,
+  saveNotes,
+  loadAIConfigs,
+  saveAIConfigs,
 } from './storage';
 import {
   fetchVideos,
@@ -130,9 +136,9 @@ const SPACING = [1, 2, 4, 7, 15, 30, 60];
 export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [videos, setVideos] = useState<Video[]>(() => loadVideos());
   const [reports, setReports] = useState<Report[]>(() => loadReports());
-  const [aiConfigs, setAiConfigs] = useState<AIConfig[]>([]);
-  const [folders, setFolders] = useState<Folder[]>([]);
-  const [notes, setNotes] = useState<Note[]>([]);
+  const [aiConfigs, setAiConfigs] = useState<AIConfig[]>(() => loadAIConfigs());
+  const [folders, setFolders] = useState<Folder[]>(() => loadFolders());
+  const [notes, setNotes] = useState<Note[]>(() => loadNotes());
   const [reminders, setReminders] = useState<Reminder[]>(() => loadReminders());
 
   useEffect(() => {
@@ -309,25 +315,36 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const next = full.isDefault
         ? [...prev.map((c) => ({ ...c, isDefault: false })), full]
         : [full, ...prev];
+      saveAIConfigs(next);
       return next;
     });
     insertAIConfig(full).catch(console.error);
   }, []);
 
   const updateAIConfig = useCallback((id: string, fields: Partial<AIConfig>) => {
-    setAiConfigs((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, ...fields, isDefault: fields.isDefault ?? c.isDefault } : c)),
-    );
+    setAiConfigs((prev) => {
+      const next = prev.map((c) => (c.id === id ? { ...c, ...fields, isDefault: fields.isDefault ?? c.isDefault } : c));
+      saveAIConfigs(next);
+      return next;
+    });
     updateAIConfigRow(id, fields).catch(console.error);
   }, []);
 
   const deleteAIConfig = useCallback((id: string) => {
-    setAiConfigs((prev) => prev.filter((c) => c.id !== id));
+    setAiConfigs((prev) => {
+      const next = prev.filter((c) => c.id !== id);
+      saveAIConfigs(next);
+      return next;
+    });
     deleteAIConfigRow(id).catch(console.error);
   }, []);
 
   const setDefaultAI = useCallback((id: string) => {
-    setAiConfigs((prev) => prev.map((c) => ({ ...c, isDefault: c.id === id })));
+    setAiConfigs((prev) => {
+      const next = prev.map((c) => ({ ...c, isDefault: c.id === id }));
+      saveAIConfigs(next);
+      return next;
+    });
     updateAIConfigRow(id, { isDefault: true }).catch(console.error);
   }, []);
 
@@ -344,7 +361,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         icon: '📁',
         sortOrder: folders.length,
       };
-      setFolders((prev) => [...prev, folder].sort((a, b) => a.sortOrder - b.sortOrder));
+      setFolders((prev) => {
+        const next = [...prev, folder].sort((a, b) => a.sortOrder - b.sortOrder);
+        saveFolders(next);
+        return next;
+      });
       insertFolder(folder).catch(console.error);
     },
     [folders],
@@ -354,13 +375,18 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setFolders((prev) => {
       const next = prev.map((f) => (f.id === id ? { ...f, ...fields } : f));
       next.sort((a, b) => a.sortOrder - b.sortOrder);
+      saveFolders(next);
       return next;
     });
     updateFolderRow(id, fields).catch(console.error);
   }, []);
 
   const deleteFolder = useCallback((id: string) => {
-    setFolders((prev) => prev.filter((f) => f.id !== id));
+    setFolders((prev) => {
+      const next = prev.filter((f) => f.id !== id);
+      saveFolders(next);
+      return next;
+    });
     deleteFolderRow(id).catch(console.error);
   }, []);
 
@@ -373,19 +399,29 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    setNotes((prev) => [note, ...prev]);
+    setNotes((prev) => {
+      const next = [note, ...prev];
+      saveNotes(next);
+      return next;
+    });
     insertNote(note).catch(console.error);
   }, []);
 
   const updateNote = useCallback((id: string, content: string) => {
-    setNotes((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, content, updatedAt: new Date().toISOString() } : n)),
-    );
+    setNotes((prev) => {
+      const next = prev.map((n) => (n.id === id ? { ...n, content, updatedAt: new Date().toISOString() } : n));
+      saveNotes(next);
+      return next;
+    });
     updateNoteRow(id, content).catch(console.error);
   }, []);
 
   const deleteNote = useCallback((id: string) => {
-    setNotes((prev) => prev.filter((n) => n.id !== id));
+    setNotes((prev) => {
+      const next = prev.filter((n) => n.id !== id);
+      saveNotes(next);
+      return next;
+    });
     deleteNoteRow(id).catch(console.error);
   }, []);
 

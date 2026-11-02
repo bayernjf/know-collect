@@ -1,44 +1,69 @@
-import type { Video, Report, Reminder } from './types';
+import type { Video, Report, Reminder, Folder, Note, AIConfig } from './types';
 
 const STORAGE_KEY = 'videovault_data';
 const REPORT_KEY = 'videovault_reports';
 const REMINDER_KEY = 'videovault_reminders';
+const FOLDER_KEY = 'videovault_folders';
+const NOTE_KEY = 'videovault_notes';
+const AI_CONFIG_KEY = 'videovault_aiconfigs';
 
-export function loadVideos(): Video[] {
+function loadList<T>(key: string): T[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as Video[]) : [];
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T[]) : [];
   } catch {
     return [];
   }
+}
+
+function saveList<T>(key: string, items: T[]): void {
+  localStorage.setItem(key, JSON.stringify(items));
+}
+
+export function loadVideos(): Video[] {
+  return loadList(STORAGE_KEY);
 }
 
 export function saveVideos(videos: Video[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(videos));
+  saveList(STORAGE_KEY, videos);
 }
 
 export function loadReports(): Report[] {
-  try {
-    const raw = localStorage.getItem(REPORT_KEY);
-    return raw ? (JSON.parse(raw) as Report[]) : [];
-  } catch {
-    return [];
-  }
+  return loadList(REPORT_KEY);
 }
 
 export function saveReports(reports: Report[]): void {
-  localStorage.setItem(REPORT_KEY, JSON.stringify(reports));
+  saveList(REPORT_KEY, reports);
 }
 
 export function loadReminders(): Reminder[] {
-  try {
-    const raw = localStorage.getItem(REMINDER_KEY);
-    return raw ? (JSON.parse(raw) as Reminder[]) : [];
-  } catch {
-    return [];
-  }
+  return loadList(REMINDER_KEY);
 }
 
 export function saveReminders(reminders: Reminder[]): void {
-  localStorage.setItem(REMINDER_KEY, JSON.stringify(reminders));
+  saveList(REMINDER_KEY, reminders);
+}
+
+export function loadFolders(): Folder[] {
+  return loadList(FOLDER_KEY);
+}
+
+export function saveFolders(folders: Folder[]): void {
+  saveList(FOLDER_KEY, folders);
+}
+
+export function loadNotes(): Note[] {
+  return loadList(NOTE_KEY);
+}
+
+export function saveNotes(notes: Note[]): void {
+  saveList(NOTE_KEY, notes);
+}
+
+export function loadAIConfigs(): AIConfig[] {
+  return loadList(AI_CONFIG_KEY);
+}
+
+export function saveAIConfigs(configs: AIConfig[]): void {
+  saveList(AI_CONFIG_KEY, configs);
 }
