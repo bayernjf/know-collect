@@ -1,5 +1,16 @@
 -- VideoVault Supabase Schema
 -- 在 Supabase SQL Editor 中执行此文件
+-- 顺序约定：被引用的表先建（folders 先于 videos，videos 先于 notes/reminders）。
+
+-- 文件夹/合集表
+create table if not exists folders (
+  id text primary key,
+  user_id uuid not null default auth.uid(),
+  name text not null,
+  icon text default '📁',
+  sort_order int default 0,
+  created_at timestamptz default now()
+);
 
 -- 视频表
 create table if not exists videos (
@@ -21,16 +32,6 @@ create table if not exists videos (
   folder_id text references folders(id) on delete set null,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
-);
-
--- 文件夹/合集表
-create table if not exists folders (
-  id text primary key,
-  user_id uuid not null default auth.uid(),
-  name text not null,
-  icon text default '📁',
-  sort_order int default 0,
-  created_at timestamptz default now()
 );
 
 -- 报告表
@@ -105,7 +106,13 @@ alter table ai_configs enable row level security;
 alter table notes enable row level security;
 alter table reminders enable row level security;
 
--- 用户只能访问自己的数据
+-- 用户只能访问自己的数据（drop + create 保证脚本可重复执行）
+drop policy if exists "user_videos" on videos;
+drop policy if exists "user_folders" on folders;
+drop policy if exists "user_reports" on reports;
+drop policy if exists "user_ai_configs" on ai_configs;
+drop policy if exists "user_notes" on notes;
+drop policy if exists "user_reminders" on reminders;
 create policy "user_videos" on videos for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "user_folders" on folders for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "user_reports" on reports for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
