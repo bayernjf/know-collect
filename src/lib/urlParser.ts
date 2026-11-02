@@ -1,4 +1,5 @@
 import type { Platform } from '../types';
+import { supabase, isSupabaseConfigured } from './supabase';
 
 export interface ParsedVideoUrl {
   platform: Platform;
@@ -65,11 +66,26 @@ const USE_DEV_PROXY = import.meta.env.DEV;
 
 async function fetchMetaViaProxy(
   url: string,
+  showToast?: (msg: string, isError?: boolean) => void,
 ): Promise<{ title?: string; author?: string; description?: string; coverUrl?: string } | null> {
   const base = METADATA_PROXY || (USE_DEV_PROXY ? '/api/meta' : '');
   if (!base) return null;
   try {
-    const resp = await fetch(`${base}?url=${encodeURIComponent(url)}`);
+    // 生产代理（Supabase Edge Function）要求用户 JWT；本地 dev 代理无需鉴权
+    const headers: Record<string, string> = {};
+    if (METADATA_PROXY && isSupabaseConfigured) {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        showToast?.('元数据抓取需要登录，请先登录后再试', true);
+        return null;
+      }
+      headers.Authorization = `Bearer ${session.access_token}`;
+    }
+    const resp = await fetch(`${base}?url=${encodeURIComponent(url)}`, { headers });
+    if (resp.status === 401) {
+      showToast?.('元数据抓取需要登录，请先登录后再试', true);
+      return null;
+    }
     if (!resp.ok) return null;
     return await resp.json();
   } catch {
@@ -109,7 +125,7 @@ export async function fetchVideoMeta(
 
   const useProxy = !!METADATA_PROXY || USE_DEV_PROXY;
   if (useProxy) {
-    const m = await fetchMetaViaProxy(url);
+    const m = await fetchMetaViaProxy(url, showToast);
     if (m && m.title) {
       return {
         title: m.title,
