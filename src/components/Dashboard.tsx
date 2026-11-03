@@ -5,6 +5,7 @@ import VideoCard from './VideoCard';
 import AddVideoModal from './AddVideoModal';
 import VideoDetailModal from './VideoDetailModal';
 import Heatmap from './Heatmap';
+import { selectRecent } from '../lib/videoList';
 import type { Page, Video } from '../types';
 
 interface DashboardProps {
@@ -33,7 +34,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     return { total, douyin, bilibili, xiaohongshu, summarized, topTags, max };
   }, [videos]);
 
-  const recent = useMemo(() => videos.slice(-6).reverse(), [videos]);
+  const recent = useMemo(() => selectRecent(videos, 6), [videos]);
 
   const dueReminders = reminders.filter(
     (r) => r.status === 'active' && new Date(r.dueDate).getTime() <= Date.now(),
