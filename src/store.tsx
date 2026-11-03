@@ -227,27 +227,32 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在登录态变化时执行一次合并
   }, [userId]);
 
-  // 浏览器通知：到期提醒
+  // 浏览器通知：到期提醒（reminders 变化时检查 + 每分钟定时检查，页面静置也能触发）
   const notifiedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (typeof Notification === 'undefined') return;
     if (Notification.permission !== 'granted') return;
-    const now = Date.now();
-    const due = reminders.filter((r) => r.status === 'active' && new Date(r.dueDate).getTime() <= now);
-    due.forEach((r) => {
-      if (!notifiedRef.current.has(r.id)) {
-        notifiedRef.current.add(r.id);
-        try {
-          new Notification('VideoVault 复习提醒', { body: r.videoTitle || '该复习一个视频了' });
-        } catch {
-          /* ignore */
+    const check = () => {
+      const now = Date.now();
+      const due = reminders.filter((r) => r.status === 'active' && new Date(r.dueDate).getTime() <= now);
+      due.forEach((r) => {
+        if (!notifiedRef.current.has(r.id)) {
+          notifiedRef.current.add(r.id);
+          try {
+            new Notification('VideoVault 复习提醒', { body: r.videoTitle || '该复习一个视频了' });
+          } catch {
+            /* ignore */
+          }
         }
-      }
-    });
-    const dueIds = new Set(due.map((r) => r.id));
-    Array.from(notifiedRef.current).forEach((id) => {
-      if (!dueIds.has(id)) notifiedRef.current.delete(id);
-    });
+      });
+      const dueIds = new Set(due.map((r) => r.id));
+      Array.from(notifiedRef.current).forEach((id) => {
+        if (!dueIds.has(id)) notifiedRef.current.delete(id);
+      });
+    };
+    check();
+    const timer = setInterval(check, 60_000);
+    return () => clearInterval(timer);
   }, [reminders]);
 
   const showToast = useCallback((message: string, isError = false) => {
