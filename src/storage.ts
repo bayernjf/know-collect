@@ -67,3 +67,36 @@ export function loadAIConfigs(): AIConfig[] {
 export function saveAIConfigs(configs: AIConfig[]): void {
   saveList(AI_CONFIG_KEY, configs);
 }
+
+// ─── 本地数据的账号归属 ─────────────────────────────────────
+// localStorage 是浏览器级共享的；多账号场景下必须防止 A 的缓存被 B 看到或上行。
+const USER_KEY = 'videovault_user';
+
+const ALL_DATA_KEYS = [STORAGE_KEY, REPORT_KEY, REMINDER_KEY, FOLDER_KEY, NOTE_KEY, AI_CONFIG_KEY];
+
+export function getStoredUserId(): string | null {
+  try {
+    return localStorage.getItem(USER_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setStoredUserId(userId: string | null): void {
+  try {
+    if (userId) localStorage.setItem(USER_KEY, userId);
+    else localStorage.removeItem(USER_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function clearAllLocalData(): void {
+  for (const key of ALL_DATA_KEYS) {
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      /* ignore */
+    }
+  }
+}

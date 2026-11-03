@@ -7,6 +7,7 @@ import {
 } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from './supabase';
+import { clearAllLocalData, setStoredUserId } from '../storage';
 
 interface AuthValue {
   session: Session | null;
@@ -57,6 +58,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     await supabase.auth.signOut();
+    // 本地缓存按账号隔离：登出即清空，避免同浏览器下一账号看到或上行前一账号的数据。
+    clearAllLocalData();
+    setStoredUserId(null);
     setSession(null);
   };
 
