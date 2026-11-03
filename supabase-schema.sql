@@ -77,6 +77,7 @@ create table if not exists reminders (
   id text primary key,
   user_id uuid not null default auth.uid(),
   video_id text not null references videos(id) on delete cascade,
+  video_title text default '',
   due_date timestamptz not null,
   interval_days int not null default 1,
   repetition int not null default 0,

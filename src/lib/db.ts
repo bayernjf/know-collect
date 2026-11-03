@@ -115,6 +115,7 @@ function rowToNote(row: NoteRow): Note {
 interface ReminderRow {
   id: string;
   video_id: string;
+  video_title?: string;
   due_date: string;
   interval_days: number;
   repetition: number;
@@ -127,6 +128,7 @@ function rowToReminder(row: ReminderRow): Reminder {
   return {
     id: row.id,
     videoId: row.video_id,
+    videoTitle: row.video_title || undefined,
     dueDate: row.due_date,
     intervalDays: row.interval_days,
     repetition: row.repetition,
@@ -367,6 +369,7 @@ export async function insertReminder(reminder: Reminder): Promise<void> {
   const { error } = await supabase.from('reminders').insert({
     id: reminder.id,
     video_id: reminder.videoId,
+    video_title: reminder.videoTitle ?? '',
     due_date: reminder.dueDate,
     interval_days: reminder.intervalDays,
     repetition: reminder.repetition,
@@ -386,6 +389,7 @@ export async function updateReminderRow(reminder: Reminder): Promise<void> {
       repetition: reminder.repetition,
       status: reminder.status,
       completed_at: reminder.completedAt,
+      ...(reminder.videoTitle !== undefined ? { video_title: reminder.videoTitle } : {}),
     })
     .eq('id', reminder.id);
   if (error) throw error;
