@@ -31,6 +31,7 @@ import {
   updateAIConfigRow,
   clearDefaultAIConfigRows,
   deleteAIConfigRow,
+  backfillAIConfigEncryption,
   fetchFolders,
   insertFolder,
   updateFolderRow,
@@ -45,6 +46,7 @@ import {
   deleteReminderRow,
 } from './lib/db';
 import { isSupabaseConfigured } from './lib/supabase';
+import { isAiKeyEncryptionConfigured, AI_KEY_ENV_NAME } from './lib/crypto';
 import { testAIConnection, type TestConnectionResult } from './lib/ai';
 import { platformName } from './utils';
 import type { Video, VideoInput, Report, AIConfig, Folder, Note, Reminder, VideoStatus } from './types';
@@ -219,6 +221,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           saveReminders(r.merged);
           r.localOnly.forEach((v) => insertReminder(v).catch(console.error));
         }
+        // 历史明文 API Key 回填：enc:v1: 前缀判重，重复执行命中 0 条。
+        const backfilled = await backfillAIConfigEncryption();
+        if (backfilled > 0) console.info(`[ai-config] 已加密回填 ${backfilled} 条密钥`);
       } catch (error) {
         console.error('加载云数据失败:', error);
       }
@@ -376,6 +381,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   // ─── AI 配置 ──────────────────────────────────────────────
   const addAIConfig = useCallback((config: Omit<AIConfig, 'id'>) => {
+    // fail-closed：密钥未配置时拒绝任何保存（云端与本地都不落明文）。
+    if (!isAiKeyEncryptionConfigured()) {
+      showToast(`AI Key 加密未配置：请先设置 ${AI_KEY_ENV_NAME}，已拒绝保存明文`, true);
+      return;
+    }
     const full: AIConfig = { ...config, id: makeId() };
     setAiConfigs((prev) => {
       const next = full.isDefault
@@ -388,10 +398,18 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const upload = full.isDefault
       ? clearDefaultAIConfigRows().then(() => insertAIConfig(full))
       : insertAIConfig(full);
-    upload.catch(console.error);
-  }, []);
+    upload.catch((error) => {
+      console.error('AI 配置云端保存失败:', error);
+      showToast(`AI 配置云端保存失败：${(error as Error).message}`, true);
+    });
+  }, [showToast]);
 
   const updateAIConfig = useCallback((id: string, fields: Partial<AIConfig>) => {
+    // 只有改动密钥时才需要加密；仅改默认标记等字段不触发 fail-closed。
+    if (fields.apiKey !== undefined && !isAiKeyEncryptionConfigured()) {
+      showToast(`AI Key 加密未配置：请先设置 ${AI_KEY_ENV_NAME}，已拒绝保存明文`, true);
+      return;
+    }
     setAiConfigs((prev) => {
       const next = prev.map((c) => (c.id === id ? { ...c, ...fields, isDefault: fields.isDefault ?? c.isDefault } : fields.isDefault ? { ...c, isDefault: false } : c));
       saveAIConfigs(next);
@@ -401,8 +419,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const upload = fields.isDefault
       ? clearDefaultAIConfigRows().then(() => updateAIConfigRow(id, fields))
       : updateAIConfigRow(id, fields);
-    upload.catch(console.error);
-  }, []);
+    upload.catch((error) => {
+      console.error('AI 配置云端保存失败:', error);
+      showToast(`AI 配置云端保存失败：${(error as Error).message}`, true);
+    });
+  }, [showToast]);
 
   const deleteAIConfig = useCallback((id: string) => {
     setAiConfigs((prev) => {

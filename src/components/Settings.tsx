@@ -3,6 +3,7 @@ import { useStore } from '../store';
 import { testAIConnection } from '../lib/ai';
 import { fetchNotionVideos } from '../lib/notion';
 import { isSupabaseConfigured } from '../lib/supabase';
+import { isAiKeyEncryptionConfigured, AI_KEY_ENV_NAME } from '../lib/crypto';
 import type { AIConfig } from '../types';
 import Modal from './Modal';
 
@@ -89,6 +90,11 @@ export default function Settings() {
           </button>
         </div>
 
+        {!isAiKeyEncryptionConfigured() && (
+          <p className="hint-text">
+            ⚠️ 未配置 <code>{AI_KEY_ENV_NAME}</code>：为避免明文落库，保存 AI 模型配置会被拒绝。
+          </p>
+        )}
         {aiConfigs.length === 0 ? (
           <p className="empty-hint">
             尚未配置 AI 模型，将使用内置模拟 AI。添加自定义模型可获得更精准的总结。
@@ -322,6 +328,10 @@ function AIConfigModal({
   const handleSave = () => {
     if (!name.trim() || !apiBaseUrl.trim() || !apiKey.trim() || !modelName.trim()) {
       showToast('请填写所有必填字段', true);
+      return;
+    }
+    if (!isAiKeyEncryptionConfigured()) {
+      showToast(`AI Key 加密未配置：请先设置 ${AI_KEY_ENV_NAME}，已拒绝保存明文`, true);
       return;
     }
     onSave({ name: name.trim(), provider, apiBaseUrl: apiBaseUrl.trim(), apiKey: apiKey.trim(), modelName: modelName.trim(), isDefault });
