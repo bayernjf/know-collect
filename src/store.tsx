@@ -12,6 +12,9 @@ import {
   saveNotes,
   loadAIConfigs,
   saveAIConfigs,
+  getStoredUserId,
+  setStoredUserId,
+  clearAllLocalData,
 } from './storage';
 import { useAuth } from './lib/auth';
 import {
@@ -134,6 +137,13 @@ function buildReport(videos: Video[], title: string): Report {
 
 const SPACING = [1, 2, 4, 7, 15, 30, 60];
 
+/** 按 id 合并云端与本地：云端优先，本地独有保留（离线新增），由调用方负责上行。 */
+function mergeById<T extends { id: string }>(cloud: T[], local: T[]): { merged: T[]; localOnly: T[] } {
+  const cloudIds = new Set(cloud.map((item) => item.id));
+  const localOnly = local.filter((item) => !cloudIds.has(item.id));
+  return { merged: [...cloud, ...localOnly], localOnly };
+}
+
 export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [videos, setVideos] = useState<Video[]>(() => loadVideos());
   const [reports, setReports] = useState<Report[]>(() => loadReports());
@@ -148,6 +158,18 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // 登录态变化（含登录成功）时重新拉取云端数据；未登录不拉（RLS 下也读不到）。
     if (!isSupabaseConfigured || !userId) return;
+    // 换账号：先清空本地缓存再拉取，防止 A 的数据被 B 看到或上行到 B 的账号。
+    const isSameUser = getStoredUserId() === userId;
+    if (!isSameUser) {
+      clearAllLocalData();
+      setStoredUserId(userId);
+      setVideos([]);
+      setReports([]);
+      setAiConfigs([]);
+      setFolders([]);
+      setNotes([]);
+      setReminders([]);
+    }
     const load = async () => {
       try {
         const [sv, sr, sa, sf, sn, srem] = await Promise.all([
@@ -158,17 +180,50 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           fetchNotes(),
           fetchReminders(),
         ]);
-        if (sv.length) setVideos(sv);
-        if (sr.length) setReports(sr);
-        if (sa.length) setAiConfigs(sa);
-        if (sf.length) setFolders(sf);
-        if (sn.length) setNotes(sn);
-        if (srem.length) setReminders(srem);
+        // 同一账号：按 id 合并（云端优先 + 本地独有保留），避免云端覆盖吞掉离线新增；
+        // 本地独有条目视为离线新增/此前上行失败，逐个补上行。
+        if (sv.length) {
+          const r = isSameUser ? mergeById(sv, videos) : { merged: sv, localOnly: [] };
+          setVideos(r.merged);
+          saveVideos(r.merged);
+          r.localOnly.forEach((v) => insertVideo(v).catch(console.error));
+        }
+        if (sr.length) {
+          const r = isSameUser ? mergeById(sr, reports) : { merged: sr, localOnly: [] };
+          setReports(r.merged);
+          saveReports(r.merged);
+          r.localOnly.forEach((v) => insertReport(v).catch(console.error));
+        }
+        if (sa.length) {
+          const r = isSameUser ? mergeById(sa, aiConfigs) : { merged: sa, localOnly: [] };
+          setAiConfigs(r.merged);
+          saveAIConfigs(r.merged);
+          r.localOnly.forEach((v) => insertAIConfig(v).catch(console.error));
+        }
+        if (sf.length) {
+          const r = isSameUser ? mergeById(sf, folders) : { merged: sf, localOnly: [] };
+          setFolders(r.merged);
+          saveFolders(r.merged);
+          r.localOnly.forEach((v) => insertFolder(v).catch(console.error));
+        }
+        if (sn.length) {
+          const r = isSameUser ? mergeById(sn, notes) : { merged: sn, localOnly: [] };
+          setNotes(r.merged);
+          saveNotes(r.merged);
+          r.localOnly.forEach((v) => insertNote(v).catch(console.error));
+        }
+        if (srem.length) {
+          const r = isSameUser ? mergeById(srem, reminders) : { merged: srem, localOnly: [] };
+          setReminders(r.merged);
+          saveReminders(r.merged);
+          r.localOnly.forEach((v) => insertReminder(v).catch(console.error));
+        }
       } catch (error) {
         console.error('加载云数据失败:', error);
       }
     };
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在登录态变化时执行一次合并
   }, [userId]);
 
   // 浏览器通知：到期提醒
