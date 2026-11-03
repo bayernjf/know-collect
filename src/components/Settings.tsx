@@ -257,7 +257,7 @@ function AIConfigCard({
         </div>
         <div className="ai-config-row">
           <span className="label">密钥:</span>{' '}
-          <code>{config.apiKey.slice(0, 8)}{'•'.repeat(12)}</code>
+          <code>{'•'.repeat(12)}</code>
         </div>
       </div>
       {testResult && (
