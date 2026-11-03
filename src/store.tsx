@@ -29,6 +29,7 @@ import {
   fetchAIConfigs,
   insertAIConfig,
   updateAIConfigRow,
+  clearDefaultAIConfigRows,
   deleteAIConfigRow,
   fetchFolders,
   insertFolder,
@@ -378,16 +379,24 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       saveAIConfigs(next);
       return next;
     });
-    insertAIConfig(full).catch(console.error);
+    // 新增即默认时同样保证云端唯一默认。
+    const upload = full.isDefault
+      ? clearDefaultAIConfigRows().then(() => insertAIConfig(full))
+      : insertAIConfig(full);
+    upload.catch(console.error);
   }, []);
 
   const updateAIConfig = useCallback((id: string, fields: Partial<AIConfig>) => {
     setAiConfigs((prev) => {
-      const next = prev.map((c) => (c.id === id ? { ...c, ...fields, isDefault: fields.isDefault ?? c.isDefault } : c));
+      const next = prev.map((c) => (c.id === id ? { ...c, ...fields, isDefault: fields.isDefault ?? c.isDefault } : fields.isDefault ? { ...c, isDefault: false } : c));
       saveAIConfigs(next);
       return next;
     });
-    updateAIConfigRow(id, fields).catch(console.error);
+    // 设默认也要清云端其他行，保持唯一默认。
+    const upload = fields.isDefault
+      ? clearDefaultAIConfigRows().then(() => updateAIConfigRow(id, fields))
+      : updateAIConfigRow(id, fields);
+    upload.catch(console.error);
   }, []);
 
   const deleteAIConfig = useCallback((id: string) => {
@@ -400,13 +409,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const setDefaultAI = useCallback((id: string) => {
-    setAiConfigs((prev) => {
-      const next = prev.map((c) => ({ ...c, isDefault: c.id === id }));
-      saveAIConfigs(next);
-      return next;
-    });
-    updateAIConfigRow(id, { isDefault: true }).catch(console.error);
-  }, []);
+    updateAIConfig(id, { isDefault: true });
+  }, [updateAIConfig]);
 
   const testAI = useCallback(async (config: Omit<AIConfig, 'id'>) => {
     return testAIConnection(config);

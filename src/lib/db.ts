@@ -277,6 +277,16 @@ export async function deleteAIConfigRow(id: string): Promise<void> {
   if (error) throw error;
 }
 
+/** 清除当前用户全部 AI 配置的默认标记（设新默认前先清，保证库里唯一默认）。 */
+export async function clearDefaultAIConfigRows(): Promise<void> {
+  if (!isSupabaseConfigured) return;
+  const { error } = await supabase
+    .from('ai_configs')
+    .update({ is_default: false, updated_at: new Date().toISOString() })
+    .eq('is_default', true);
+  if (error) throw error;
+}
+
 // ─── Folders ──────────────────────────────────────────────────
 
 export async function fetchFolders(): Promise<Folder[]> {
