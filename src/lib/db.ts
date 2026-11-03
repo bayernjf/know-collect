@@ -164,6 +164,8 @@ export async function updateVideoRow(id: string, fields: Partial<Video>): Promis
   if (fields.description !== undefined) row.description = fields.description;
   if (fields.tags !== undefined) row.tags = fields.tags;
   if (fields.transcript !== undefined) row.transcript = fields.transcript;
+  if (fields.coverUrl !== undefined) row.cover_url = fields.coverUrl;
+  if (fields.duration !== undefined) row.duration = fields.duration;
   if (fields.summary !== undefined) row.summary = fields.summary;
   if (fields.keyPoints !== undefined) row.key_points = fields.keyPoints;
   if (fields.status !== undefined) row.status = fields.status;
