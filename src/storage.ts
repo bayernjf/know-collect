@@ -17,7 +17,12 @@ function loadList<T>(key: string): T[] {
 }
 
 function saveList<T>(key: string, items: T[]): void {
-  localStorage.setItem(key, JSON.stringify(items));
+  try {
+    localStorage.setItem(key, JSON.stringify(items));
+  } catch (error) {
+    // 配额写满（大文稿）或隐私模式时静默降级为"仅内存"，不拖垮 React 渲染。
+    console.warn(`[storage] 本地保存失败（${key}）：`, error);
+  }
 }
 
 export function loadVideos(): Video[] {
