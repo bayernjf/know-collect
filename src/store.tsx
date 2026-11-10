@@ -6,7 +6,17 @@ import {
   saveReports,
   loadReminders,
   saveReminders,
+  loadFolders,
+  saveFolders,
+  loadNotes,
+  saveNotes,
+  loadAIConfigs,
+  saveAIConfigs,
+  getStoredUserId,
+  setStoredUserId,
+  clearAllLocalData,
 } from './storage';
+import { useAuth } from './lib/auth';
 import {
   fetchVideos,
   insertVideo,
@@ -19,7 +29,9 @@ import {
   fetchAIConfigs,
   insertAIConfig,
   updateAIConfigRow,
+  clearDefaultAIConfigRows,
   deleteAIConfigRow,
+  backfillAIConfigEncryption,
   fetchFolders,
   insertFolder,
   updateFolderRow,
@@ -34,6 +46,7 @@ import {
   deleteReminderRow,
 } from './lib/db';
 import { isSupabaseConfigured } from './lib/supabase';
+import { isAiKeyEncryptionConfigured, AI_KEY_ENV_NAME } from './lib/crypto';
 import { testAIConnection, type TestConnectionResult } from './lib/ai';
 import { platformName } from './utils';
 import type { Video, VideoInput, Report, AIConfig, Folder, Note, Reminder, VideoStatus } from './types';
@@ -127,16 +140,39 @@ function buildReport(videos: Video[], title: string): Report {
 
 const SPACING = [1, 2, 4, 7, 15, 30, 60];
 
+/** 按 id 合并云端与本地：云端优先，本地独有保留（离线新增），由调用方负责上行。 */
+function mergeById<T extends { id: string }>(cloud: T[], local: T[]): { merged: T[]; localOnly: T[] } {
+  const cloudIds = new Set(cloud.map((item) => item.id));
+  const localOnly = local.filter((item) => !cloudIds.has(item.id));
+  return { merged: [...cloud, ...localOnly], localOnly };
+}
+
 export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [videos, setVideos] = useState<Video[]>(() => loadVideos());
   const [reports, setReports] = useState<Report[]>(() => loadReports());
-  const [aiConfigs, setAiConfigs] = useState<AIConfig[]>([]);
-  const [folders, setFolders] = useState<Folder[]>([]);
-  const [notes, setNotes] = useState<Note[]>([]);
+  const [aiConfigs, setAiConfigs] = useState<AIConfig[]>(() => loadAIConfigs());
+  const [folders, setFolders] = useState<Folder[]>(() => loadFolders());
+  const [notes, setNotes] = useState<Note[]>(() => loadNotes());
   const [reminders, setReminders] = useState<Reminder[]>(() => loadReminders());
 
+  const { user } = useAuth();
+  const userId = user?.id ?? null;
+
   useEffect(() => {
-    if (!isSupabaseConfigured) return;
+    // 登录态变化（含登录成功）时重新拉取云端数据；未登录不拉（RLS 下也读不到）。
+    if (!isSupabaseConfigured || !userId) return;
+    // 换账号：先清空本地缓存再拉取，防止 A 的数据被 B 看到或上行到 B 的账号。
+    const isSameUser = getStoredUserId() === userId;
+    if (!isSameUser) {
+      clearAllLocalData();
+      setStoredUserId(userId);
+      setVideos([]);
+      setReports([]);
+      setAiConfigs([]);
+      setFolders([]);
+      setNotes([]);
+      setReminders([]);
+    }
     const load = async () => {
       try {
         const [sv, sr, sa, sf, sn, srem] = await Promise.all([
@@ -147,40 +183,81 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           fetchNotes(),
           fetchReminders(),
         ]);
-        if (sv.length) setVideos(sv);
-        if (sr.length) setReports(sr);
-        if (sa.length) setAiConfigs(sa);
-        if (sf.length) setFolders(sf);
-        if (sn.length) setNotes(sn);
-        if (srem.length) setReminders(srem);
+        // 同一账号：按 id 合并（云端优先 + 本地独有保留），避免云端覆盖吞掉离线新增；
+        // 本地独有条目视为离线新增/此前上行失败，逐个补上行。
+        if (sv.length) {
+          const r = isSameUser ? mergeById(sv, videos) : { merged: sv, localOnly: [] };
+          setVideos(r.merged);
+          saveVideos(r.merged);
+          r.localOnly.forEach((v) => insertVideo(v).catch(console.error));
+        }
+        if (sr.length) {
+          const r = isSameUser ? mergeById(sr, reports) : { merged: sr, localOnly: [] };
+          setReports(r.merged);
+          saveReports(r.merged);
+          r.localOnly.forEach((v) => insertReport(v).catch(console.error));
+        }
+        if (sa.length) {
+          const r = isSameUser ? mergeById(sa, aiConfigs) : { merged: sa, localOnly: [] };
+          setAiConfigs(r.merged);
+          saveAIConfigs(r.merged);
+          r.localOnly.forEach((v) => insertAIConfig(v).catch(console.error));
+        }
+        if (sf.length) {
+          const r = isSameUser ? mergeById(sf, folders) : { merged: sf, localOnly: [] };
+          setFolders(r.merged);
+          saveFolders(r.merged);
+          r.localOnly.forEach((v) => insertFolder(v).catch(console.error));
+        }
+        if (sn.length) {
+          const r = isSameUser ? mergeById(sn, notes) : { merged: sn, localOnly: [] };
+          setNotes(r.merged);
+          saveNotes(r.merged);
+          r.localOnly.forEach((v) => insertNote(v).catch(console.error));
+        }
+        if (srem.length) {
+          const r = isSameUser ? mergeById(srem, reminders) : { merged: srem, localOnly: [] };
+          setReminders(r.merged);
+          saveReminders(r.merged);
+          r.localOnly.forEach((v) => insertReminder(v).catch(console.error));
+        }
+        // 历史明文 API Key 回填：enc:v1: 前缀判重，重复执行命中 0 条。
+        const backfilled = await backfillAIConfigEncryption();
+        if (backfilled > 0) console.info(`[ai-config] 已加密回填 ${backfilled} 条密钥`);
       } catch (error) {
         console.error('加载云数据失败:', error);
       }
     };
     load();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在登录态变化时执行一次合并
+  }, [userId]);
 
-  // 浏览器通知：到期提醒
+  // 浏览器通知：到期提醒（reminders 变化时检查 + 每分钟定时检查，页面静置也能触发）
   const notifiedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (typeof Notification === 'undefined') return;
     if (Notification.permission !== 'granted') return;
-    const now = Date.now();
-    const due = reminders.filter((r) => r.status === 'active' && new Date(r.dueDate).getTime() <= now);
-    due.forEach((r) => {
-      if (!notifiedRef.current.has(r.id)) {
-        notifiedRef.current.add(r.id);
-        try {
-          new Notification('VideoVault 复习提醒', { body: r.videoTitle || '该复习一个视频了' });
-        } catch {
-          /* ignore */
+    const check = () => {
+      const now = Date.now();
+      const due = reminders.filter((r) => r.status === 'active' && new Date(r.dueDate).getTime() <= now);
+      due.forEach((r) => {
+        if (!notifiedRef.current.has(r.id)) {
+          notifiedRef.current.add(r.id);
+          try {
+            new Notification('VideoVault 复习提醒', { body: r.videoTitle || '该复习一个视频了' });
+          } catch {
+            /* ignore */
+          }
         }
-      }
-    });
-    const dueIds = new Set(due.map((r) => r.id));
-    Array.from(notifiedRef.current).forEach((id) => {
-      if (!dueIds.has(id)) notifiedRef.current.delete(id);
-    });
+      });
+      const dueIds = new Set(due.map((r) => r.id));
+      Array.from(notifiedRef.current).forEach((id) => {
+        if (!dueIds.has(id)) notifiedRef.current.delete(id);
+      });
+    };
+    check();
+    const timer = setInterval(check, 60_000);
+    return () => clearInterval(timer);
   }, [reminders]);
 
   const showToast = useCallback((message: string, isError = false) => {
@@ -304,32 +381,62 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   // ─── AI 配置 ──────────────────────────────────────────────
   const addAIConfig = useCallback((config: Omit<AIConfig, 'id'>) => {
+    // fail-closed：密钥未配置时拒绝任何保存（云端与本地都不落明文）。
+    if (!isAiKeyEncryptionConfigured()) {
+      showToast(`AI Key 加密未配置：请先设置 ${AI_KEY_ENV_NAME}，已拒绝保存明文`, true);
+      return;
+    }
     const full: AIConfig = { ...config, id: makeId() };
     setAiConfigs((prev) => {
       const next = full.isDefault
         ? [...prev.map((c) => ({ ...c, isDefault: false })), full]
         : [full, ...prev];
+      saveAIConfigs(next);
       return next;
     });
-    insertAIConfig(full).catch(console.error);
-  }, []);
+    // 新增即默认时同样保证云端唯一默认。
+    const upload = full.isDefault
+      ? clearDefaultAIConfigRows().then(() => insertAIConfig(full))
+      : insertAIConfig(full);
+    upload.catch((error) => {
+      console.error('AI 配置云端保存失败:', error);
+      showToast(`AI 配置云端保存失败：${(error as Error).message}`, true);
+    });
+  }, [showToast]);
 
   const updateAIConfig = useCallback((id: string, fields: Partial<AIConfig>) => {
-    setAiConfigs((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, ...fields, isDefault: fields.isDefault ?? c.isDefault } : c)),
-    );
-    updateAIConfigRow(id, fields).catch(console.error);
-  }, []);
+    // 只有改动密钥时才需要加密；仅改默认标记等字段不触发 fail-closed。
+    if (fields.apiKey !== undefined && !isAiKeyEncryptionConfigured()) {
+      showToast(`AI Key 加密未配置：请先设置 ${AI_KEY_ENV_NAME}，已拒绝保存明文`, true);
+      return;
+    }
+    setAiConfigs((prev) => {
+      const next = prev.map((c) => (c.id === id ? { ...c, ...fields, isDefault: fields.isDefault ?? c.isDefault } : fields.isDefault ? { ...c, isDefault: false } : c));
+      saveAIConfigs(next);
+      return next;
+    });
+    // 设默认也要清云端其他行，保持唯一默认。
+    const upload = fields.isDefault
+      ? clearDefaultAIConfigRows().then(() => updateAIConfigRow(id, fields))
+      : updateAIConfigRow(id, fields);
+    upload.catch((error) => {
+      console.error('AI 配置云端保存失败:', error);
+      showToast(`AI 配置云端保存失败：${(error as Error).message}`, true);
+    });
+  }, [showToast]);
 
   const deleteAIConfig = useCallback((id: string) => {
-    setAiConfigs((prev) => prev.filter((c) => c.id !== id));
+    setAiConfigs((prev) => {
+      const next = prev.filter((c) => c.id !== id);
+      saveAIConfigs(next);
+      return next;
+    });
     deleteAIConfigRow(id).catch(console.error);
   }, []);
 
   const setDefaultAI = useCallback((id: string) => {
-    setAiConfigs((prev) => prev.map((c) => ({ ...c, isDefault: c.id === id })));
-    updateAIConfigRow(id, { isDefault: true }).catch(console.error);
-  }, []);
+    updateAIConfig(id, { isDefault: true });
+  }, [updateAIConfig]);
 
   const testAI = useCallback(async (config: Omit<AIConfig, 'id'>) => {
     return testAIConnection(config);
@@ -344,7 +451,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         icon: '📁',
         sortOrder: folders.length,
       };
-      setFolders((prev) => [...prev, folder].sort((a, b) => a.sortOrder - b.sortOrder));
+      setFolders((prev) => {
+        const next = [...prev, folder].sort((a, b) => a.sortOrder - b.sortOrder);
+        saveFolders(next);
+        return next;
+      });
       insertFolder(folder).catch(console.error);
     },
     [folders],
@@ -354,13 +465,18 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setFolders((prev) => {
       const next = prev.map((f) => (f.id === id ? { ...f, ...fields } : f));
       next.sort((a, b) => a.sortOrder - b.sortOrder);
+      saveFolders(next);
       return next;
     });
     updateFolderRow(id, fields).catch(console.error);
   }, []);
 
   const deleteFolder = useCallback((id: string) => {
-    setFolders((prev) => prev.filter((f) => f.id !== id));
+    setFolders((prev) => {
+      const next = prev.filter((f) => f.id !== id);
+      saveFolders(next);
+      return next;
+    });
     deleteFolderRow(id).catch(console.error);
   }, []);
 
@@ -373,19 +489,29 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    setNotes((prev) => [note, ...prev]);
+    setNotes((prev) => {
+      const next = [note, ...prev];
+      saveNotes(next);
+      return next;
+    });
     insertNote(note).catch(console.error);
   }, []);
 
   const updateNote = useCallback((id: string, content: string) => {
-    setNotes((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, content, updatedAt: new Date().toISOString() } : n)),
-    );
+    setNotes((prev) => {
+      const next = prev.map((n) => (n.id === id ? { ...n, content, updatedAt: new Date().toISOString() } : n));
+      saveNotes(next);
+      return next;
+    });
     updateNoteRow(id, content).catch(console.error);
   }, []);
 
   const deleteNote = useCallback((id: string) => {
-    setNotes((prev) => prev.filter((n) => n.id !== id));
+    setNotes((prev) => {
+      const next = prev.filter((n) => n.id !== id);
+      saveNotes(next);
+      return next;
+    });
     deleteNoteRow(id).catch(console.error);
   }, []);
 

@@ -30,6 +30,7 @@ export default function AddVideoModal({ editId, initialUrl, onClose }: AddVideoM
   const [tags, setTags] = useState((editing?.tags ?? []).join(','));
   const [transcript, setTranscript] = useState(editing?.transcript ?? '');
   const [coverUrl, setCoverUrl] = useState(editing?.coverUrl ?? '');
+  const [duration, setDuration] = useState(editing?.duration ?? '');
   const [parsing, setParsing] = useState(false);
 
   // 链接变化时自动检测平台
@@ -52,6 +53,7 @@ export default function AddVideoModal({ editId, initialUrl, onClose }: AddVideoM
         if (meta.author) setAuthor(meta.author);
         if (meta.description) setDescription(meta.description);
         if (meta.coverUrl) setCoverUrl(meta.coverUrl);
+        if (meta.duration) setDuration(meta.duration);
         showToast('视频信息已自动填充 ✅');
       } else {
         showToast('无法自动解析，请手动填写', true);
@@ -73,6 +75,7 @@ export default function AddVideoModal({ editId, initialUrl, onClose }: AddVideoM
       setTags((editing.tags ?? []).join(','));
       setTranscript(editing.transcript ?? '');
       setCoverUrl(editing.coverUrl ?? '');
+      setDuration(editing.duration ?? '');
     }
   }, [editId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -101,6 +104,7 @@ export default function AddVideoModal({ editId, initialUrl, onClose }: AddVideoM
         .filter(Boolean),
       transcript: transcript.trim(),
       coverUrl: coverUrl.trim(),
+      duration: duration.trim(),
     };
     if (editing) {
       updateVideo(editing.id, data);

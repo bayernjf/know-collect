@@ -6,11 +6,10 @@ import { parseCSV, parseJSONBackup } from '../lib/import';
 import VideoCard from './VideoCard';
 import AddVideoModal from './AddVideoModal';
 import VideoDetailModal from './VideoDetailModal';
+import { matchesFilter, countForFilter, type VideoFilter } from '../lib/videoList';
 import type { Video } from '../types';
 
-type Filter = 'all' | 'douyin' | 'bilibili' | 'xiaohongshu' | 'summarized' | 'unsummarized' | 'unread' | 'reading' | 'done' | 'starred';
-
-const TABS: { key: Filter; label: string }[] = [
+const TABS: { key: VideoFilter; label: string }[] = [
   { key: 'all', label: '全部' },
   { key: 'douyin', label: '抖音' },
   { key: 'bilibili', label: 'B站' },
@@ -38,7 +37,7 @@ export default function Library({
     generateReport,
     reportModals,
   } = useAIModals();
-  const [filter, setFilter] = useState<Filter>('all');
+  const [filter, setFilter] = useState<VideoFilter>('all');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showAdd, setShowAdd] = useState(false);
@@ -55,12 +54,7 @@ export default function Library({
   }, [initialAddUrl, onAddUrlConsumed]);
 
   const filtered = useMemo(() => {
-    let list = [...videos];
-    if (filter === 'summarized') list = list.filter((v) => v.summary);
-    else if (filter === 'unsummarized') list = list.filter((v) => !v.summary);
-    else if (['unread', 'reading', 'done', 'starred'].includes(filter))
-      list = list.filter((v) => (v.status || 'unread') === filter);
-    else if (filter !== 'all') list = list.filter((v) => v.platform === filter);
+    let list = videos.filter((v) => matchesFilter(v, filter));
 
     if (folderFilter) list = list.filter((v) => v.folderId === folderFilter);
 
@@ -79,7 +73,7 @@ export default function Library({
     return list;
   }, [videos, filter, search, folderFilter]);
 
-  const changeFilter = (f: Filter) => {
+  const changeFilter = (f: VideoFilter) => {
     setFilter(f);
     setSelected(new Set());
   };
@@ -150,14 +144,8 @@ export default function Library({
 
       <div className="tabs">
         {TABS.map((t) => {
-          const count =
-            t.key === 'all'
-              ? videos.length
-              : t.key === 'summarized'
-              ? videos.filter((v) => v.summary).length
-              : t.key === 'unsummarized'
-              ? countUnsummarized
-              : videos.filter((v) => v.platform === t.key).length;
+          // 计数与过滤共用 matchesFilter：状态类 tab 不再落到 platform 分支。
+          const count = countForFilter(videos, t.key);
           return (
             <button
               key={t.key}

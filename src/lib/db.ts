@@ -1,4 +1,10 @@
 import { supabase, isSupabaseConfigured } from './supabase';
+import {
+  decryptApiKey,
+  encryptApiKey,
+  isAiKeyEncryptionConfigured,
+  isEncryptedApiKey,
+} from './crypto';
 import type { Video, Report, AIConfig, Folder, Note, Reminder } from '../types';
 
 // ─── 辅助：DB 行 ↔ 前端类型转换 ───────────────────────────────
@@ -115,6 +121,7 @@ function rowToNote(row: NoteRow): Note {
 interface ReminderRow {
   id: string;
   video_id: string;
+  video_title?: string;
   due_date: string;
   interval_days: number;
   repetition: number;
@@ -127,6 +134,7 @@ function rowToReminder(row: ReminderRow): Reminder {
   return {
     id: row.id,
     videoId: row.video_id,
+    videoTitle: row.video_title || undefined,
     dueDate: row.due_date,
     intervalDays: row.interval_days,
     repetition: row.repetition,
@@ -164,6 +172,8 @@ export async function updateVideoRow(id: string, fields: Partial<Video>): Promis
   if (fields.description !== undefined) row.description = fields.description;
   if (fields.tags !== undefined) row.tags = fields.tags;
   if (fields.transcript !== undefined) row.transcript = fields.transcript;
+  if (fields.coverUrl !== undefined) row.cover_url = fields.coverUrl;
+  if (fields.duration !== undefined) row.duration = fields.duration;
   if (fields.summary !== undefined) row.summary = fields.summary;
   if (fields.keyPoints !== undefined) row.key_points = fields.keyPoints;
   if (fields.status !== undefined) row.status = fields.status;
@@ -236,17 +246,23 @@ export async function fetchAIConfigs(): Promise<AIConfig[]> {
     .select('*')
     .order('created_at', { ascending: true });
   if (error) throw error;
-  return (data as AIConfigRow[]).map(rowToAIConfig);
+  const rows = data as AIConfigRow[];
+  // 读取时解密：密文但密钥缺失/不匹配会抛错，绝不把密文当 Key 直接使用。
+  return Promise.all(
+    rows.map(async (row) => rowToAIConfig({ ...row, api_key: await decryptApiKey(row.api_key) })),
+  );
 }
 
 export async function insertAIConfig(config: AIConfig): Promise<void> {
   if (!isSupabaseConfigured) return;
+  // 加密失败（含密钥未配置）时抛错，不降级为明文写入。
+  const apiKey = await encryptApiKey(config.apiKey);
   const { error } = await supabase.from('ai_configs').insert({
     id: config.id,
     name: config.name,
     provider: config.provider,
     api_base_url: config.apiBaseUrl,
-    api_key: config.apiKey,
+    api_key: apiKey,
     model_name: config.modelName,
     is_default: config.isDefault,
   });
@@ -259,7 +275,7 @@ export async function updateAIConfigRow(id: string, config: Partial<AIConfig>): 
   if (config.name !== undefined) row.name = config.name;
   if (config.provider !== undefined) row.provider = config.provider;
   if (config.apiBaseUrl !== undefined) row.api_base_url = config.apiBaseUrl;
-  if (config.apiKey !== undefined) row.api_key = config.apiKey;
+  if (config.apiKey !== undefined) row.api_key = await encryptApiKey(config.apiKey);
   if (config.modelName !== undefined) row.model_name = config.modelName;
   if (config.isDefault !== undefined) row.is_default = config.isDefault;
   row.updated_at = new Date().toISOString();
@@ -267,9 +283,46 @@ export async function updateAIConfigRow(id: string, config: Partial<AIConfig>): 
   if (error) throw error;
 }
 
+/**
+ * 一次性回填：把历史明文 api_key 加密后写回。
+ *
+ * 依赖 `enc:v1:` 前缀判重，因此可重复执行；第二次运行只会命中 0 条。
+ * 未配置加密密钥时直接跳过（不写明文也不报错，由保存路径负责 fail-closed）。
+ */
+export async function backfillAIConfigEncryption(): Promise<number> {
+  if (!isSupabaseConfigured || !isAiKeyEncryptionConfigured()) return 0;
+  const { data, error } = await supabase.from('ai_configs').select('id, api_key');
+  if (error) throw error;
+  const legacyRows = (data as { id: string; api_key: string | null }[]).filter(
+    (row): row is { id: string; api_key: string } =>
+      Boolean(row.api_key) && !isEncryptedApiKey(row.api_key as string),
+  );
+  let migrated = 0;
+  for (const row of legacyRows) {
+    const encrypted = await encryptApiKey(row.api_key);
+    const { error: updateError } = await supabase
+      .from('ai_configs')
+      .update({ api_key: encrypted, updated_at: new Date().toISOString() })
+      .eq('id', row.id);
+    if (updateError) throw updateError;
+    migrated += 1;
+  }
+  return migrated;
+}
+
 export async function deleteAIConfigRow(id: string): Promise<void> {
   if (!isSupabaseConfigured) return;
   const { error } = await supabase.from('ai_configs').delete().eq('id', id);
+  if (error) throw error;
+}
+
+/** 清除当前用户全部 AI 配置的默认标记（设新默认前先清，保证库里唯一默认）。 */
+export async function clearDefaultAIConfigRows(): Promise<void> {
+  if (!isSupabaseConfigured) return;
+  const { error } = await supabase
+    .from('ai_configs')
+    .update({ is_default: false, updated_at: new Date().toISOString() })
+    .eq('is_default', true);
   if (error) throw error;
 }
 
@@ -365,6 +418,7 @@ export async function insertReminder(reminder: Reminder): Promise<void> {
   const { error } = await supabase.from('reminders').insert({
     id: reminder.id,
     video_id: reminder.videoId,
+    video_title: reminder.videoTitle ?? '',
     due_date: reminder.dueDate,
     interval_days: reminder.intervalDays,
     repetition: reminder.repetition,
@@ -384,6 +438,7 @@ export async function updateReminderRow(reminder: Reminder): Promise<void> {
       repetition: reminder.repetition,
       status: reminder.status,
       completed_at: reminder.completedAt,
+      ...(reminder.videoTitle !== undefined ? { video_title: reminder.videoTitle } : {}),
     })
     .eq('id', reminder.id);
   if (error) throw error;

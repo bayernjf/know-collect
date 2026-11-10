@@ -1,44 +1,107 @@
-import type { Video, Report, Reminder } from './types';
+import type { Video, Report, Reminder, Folder, Note, AIConfig } from './types';
 
 const STORAGE_KEY = 'videovault_data';
 const REPORT_KEY = 'videovault_reports';
 const REMINDER_KEY = 'videovault_reminders';
+const FOLDER_KEY = 'videovault_folders';
+const NOTE_KEY = 'videovault_notes';
+const AI_CONFIG_KEY = 'videovault_aiconfigs';
 
-export function loadVideos(): Video[] {
+function loadList<T>(key: string): T[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as Video[]) : [];
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T[]) : [];
   } catch {
     return [];
   }
+}
+
+function saveList<T>(key: string, items: T[]): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(items));
+  } catch (error) {
+    // 配额写满（大文稿）或隐私模式时静默降级为"仅内存"，不拖垮 React 渲染。
+    console.warn(`[storage] 本地保存失败（${key}）：`, error);
+  }
+}
+
+export function loadVideos(): Video[] {
+  return loadList(STORAGE_KEY);
 }
 
 export function saveVideos(videos: Video[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(videos));
+  saveList(STORAGE_KEY, videos);
 }
 
 export function loadReports(): Report[] {
-  try {
-    const raw = localStorage.getItem(REPORT_KEY);
-    return raw ? (JSON.parse(raw) as Report[]) : [];
-  } catch {
-    return [];
-  }
+  return loadList(REPORT_KEY);
 }
 
 export function saveReports(reports: Report[]): void {
-  localStorage.setItem(REPORT_KEY, JSON.stringify(reports));
+  saveList(REPORT_KEY, reports);
 }
 
 export function loadReminders(): Reminder[] {
-  try {
-    const raw = localStorage.getItem(REMINDER_KEY);
-    return raw ? (JSON.parse(raw) as Reminder[]) : [];
-  } catch {
-    return [];
-  }
+  return loadList(REMINDER_KEY);
 }
 
 export function saveReminders(reminders: Reminder[]): void {
-  localStorage.setItem(REMINDER_KEY, JSON.stringify(reminders));
+  saveList(REMINDER_KEY, reminders);
+}
+
+export function loadFolders(): Folder[] {
+  return loadList(FOLDER_KEY);
+}
+
+export function saveFolders(folders: Folder[]): void {
+  saveList(FOLDER_KEY, folders);
+}
+
+export function loadNotes(): Note[] {
+  return loadList(NOTE_KEY);
+}
+
+export function saveNotes(notes: Note[]): void {
+  saveList(NOTE_KEY, notes);
+}
+
+export function loadAIConfigs(): AIConfig[] {
+  return loadList(AI_CONFIG_KEY);
+}
+
+export function saveAIConfigs(configs: AIConfig[]): void {
+  saveList(AI_CONFIG_KEY, configs);
+}
+
+// ─── 本地数据的账号归属 ─────────────────────────────────────
+// localStorage 是浏览器级共享的；多账号场景下必须防止 A 的缓存被 B 看到或上行。
+const USER_KEY = 'videovault_user';
+
+const ALL_DATA_KEYS = [STORAGE_KEY, REPORT_KEY, REMINDER_KEY, FOLDER_KEY, NOTE_KEY, AI_CONFIG_KEY];
+
+export function getStoredUserId(): string | null {
+  try {
+    return localStorage.getItem(USER_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setStoredUserId(userId: string | null): void {
+  try {
+    if (userId) localStorage.setItem(USER_KEY, userId);
+    else localStorage.removeItem(USER_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function clearAllLocalData(): void {
+  for (const key of ALL_DATA_KEYS) {
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      /* ignore */
+    }
+  }
 }

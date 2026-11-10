@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { formatLocalDate } from '../lib/date';
 import type { Video } from '../types';
 
 interface HeatmapProps {
@@ -30,13 +31,14 @@ export default function Heatmap({ videos }: HeatmapProps) {
     const cells: { date: string; count: number; future: boolean }[] = [];
     const cursor = new Date(startDate);
     while (cursor <= today) {
-      const key = cursor.toISOString().slice(0, 10);
+      // 用本地日期（不是 UTC），否则 UTC+8 下每个格子的 key 会早一天。
+      const key = formatLocalDate(cursor);
       cells.push({ date: key, count: countMap[key] || 0, future: false });
       cursor.setDate(cursor.getDate() + 1);
     }
     // 补齐到周日
     while (cursor.getDay() !== 0) {
-      const key = cursor.toISOString().slice(0, 10);
+      const key = formatLocalDate(cursor);
       cells.push({ date: key, count: 0, future: true });
       cursor.setDate(cursor.getDate() + 1);
     }
@@ -66,15 +68,16 @@ export default function Heatmap({ videos }: HeatmapProps) {
   // 月份标签
   const monthLabels = useMemo(() => {
     const labels: { label: string; col: number }[] = [];
-    const seen = new Set<number>();
+    const seen = new Set<string>();
     weeks.forEach((week, wi) => {
       const firstDay = week[0]?.date;
       if (!firstDay) return;
-      const month = new Date(firstDay).getMonth();
-      if (!seen.has(month)) {
-        seen.add(month);
+      // 直接解析 YYYY-MM-DD 的本地年月，避免 new Date(str) 按 UTC 解析造成跨月偏移。
+      const monthKey = firstDay.slice(0, 7);
+      if (!seen.has(monthKey)) {
+        seen.add(monthKey);
         labels.push({
-          label: new Date(firstDay).toLocaleDateString('zh-CN', { month: 'short' }),
+          label: new Date(Number(firstDay.slice(0, 4)), Number(firstDay.slice(5, 7)) - 1, 1).toLocaleDateString('zh-CN', { month: 'short' }),
           col: wi,
         });
       }

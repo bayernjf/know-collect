@@ -30,6 +30,7 @@ export interface VideoInput {
   tags: string[];
   transcript: string;
   coverUrl?: string;
+  duration?: string;
   status?: VideoStatus;
   folderId?: string | null;
 }
